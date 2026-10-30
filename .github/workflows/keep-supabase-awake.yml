@@ -1,0 +1,40 @@
+# Supabase's free plan pauses a project after a week without activity.
+# This pings the database every two days so that never happens.
+# The key below is the publishable (public) key the app already ships with.
+name: Keep Supabase awake
+
+on:
+  schedule:
+    - cron: "0 15 */2 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query the database
+        env:
+          SUPABASE_URL: https://wckopkvyduaqjnyxsqsp.supabase.co
+          SUPABASE_KEY: sb_publishable_B9EqKyeqI_5yHPTGJ4FtIg_LVdPtXBa
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            "$SUPABASE_URL/rest/v1/monthly_challenges?select=month&limit=1" \
+            -H "apikey: $SUPABASE_KEY")
+          echo "Supabase answered $code"
+          test "$code" = 200
+
+      # GitHub turns off scheduled jobs in repos with no commits for 60 days,
+      # so add an empty commit every ~50 days to keep this running.
+      - uses: actions/checkout@v4
+      - name: Keep the schedule enabled
+        run: |
+          age=$(( $(date +%s) - $(git log -1 --format=%ct) ))
+          if [ "$age" -gt 4320000 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "Keep scheduled Supabase ping enabled"
+            git push
+          fi
